@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>train-hf 任务：不建议改成液态神经网络的评估</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #4b5563;
+      --line: #d1d5db;
+      --good: #0f766e;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --accent: #0b4f6c;
+      --accent-soft: #e6f1f5;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: linear-gradient(120deg, #eef3f7 0%, #f8f9fb 55%, #ecf5f1 100%);
+      background-size: 220% 220%;
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+      animation: gradientShift 16s ease-in-out infinite;
+      overflow-x: hidden;
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+      position: relative;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 20px;
+      box-shadow: 0 4px 14px rgba(17, 24, 39, 0.05);
+      transition: transform 0.35s ease, box-shadow 0.35s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -150%;
+      width: 140%;
+      height: 100%;
+      background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.2) 45%, transparent 100%);
+      transition: left 0.75s ease;
+      pointer-events: none;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 24px rgba(17, 24, 39, 0.09);
+    }
+
+    .card:hover::after {
+      left: 120%;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.25;
+      color: #0f172a;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      color: #0f172a;
+      border-left: 4px solid var(--accent);
+      padding-left: 10px;
+    }
+
+    h3 {
+      margin: 16px 0 8px;
+      font-size: 16px;
+      color: #0f172a;
+    }
+
+    p {
+      margin: 6px 0;
+    }
+
+    ul {
+      margin: 8px 0;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid #c5dbe4;
+      animation: floatTag 5.5s ease-in-out infinite;
+    }
+
+    .summary {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 6px solid var(--bad);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-top: 10px;
+      animation: pulseBorder 3.5s ease-in-out infinite;
+    }
+
+    .summary strong {
+      color: #7f1d1d;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f1f5f9;
+      color: #111827;
+      font-weight: 700;
+    }
+
+    tbody tr {
+      transition: background-color 0.25s ease;
+    }
+
+    tbody tr:hover {
+      background: #f8fafc;
+    }
+
+    .score {
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .s-good { color: var(--good); }
+    .s-mid { color: var(--warn); }
+    .s-bad { color: var(--bad); }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .kpi {
+      background: #f8fafc;
+      border: 1px solid #dbe4ef;
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: transform 0.28s ease, border-color 0.28s ease;
+    }
+
+    .kpi:hover {
+      transform: translateY(-2px);
+      border-color: #a8bfd4;
+    }
+
+    .kpi .name {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .kpi .value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 2px;
+    }
+
+    code {
+      font-family: "Consolas", "Menlo", monospace;
+      background: #eef2f7;
+      border: 1px solid #d7dde7;
+      border-radius: 6px;
+      padding: 1px 5px;
+      font-size: 90%;
+    }
+
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .highlight {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-left: 6px solid #ea580c;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 10px;
+    }
+
+    .ok {
+      background: #ecfeff;
+      border: 1px solid #a5f3fc;
+      border-left: 6px solid #0891b2;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 10px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 14px;
+      align-items: center;
+      min-height: 240px;
+    }
+
+    .hero-title {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.2;
+      color: #0f172a;
+    }
+
+    .hero-desc {
+      color: #334155;
+      margin-top: 8px;
+    }
+
+    .hero-visual {
+      border: 1px solid #c9d5e3;
+      border-radius: 12px;
+      background: radial-gradient(circle at 20% 15%, #dbeafe 0%, #eff6ff 25%, #e0f2fe 70%, #f8fafc 100%);
+      min-height: 200px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(0.4px);
+      opacity: 0.75;
+      animation: orbit 8s ease-in-out infinite;
+    }
+
+    .orb.one {
+      width: 84px;
+      height: 84px;
+      background: linear-gradient(135deg, #0ea5e9, #0284c7);
+      top: 30px;
+      left: 24px;
+      animation-delay: 0.3s;
+    }
+
+    .orb.two {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, #22c55e, #0f766e);
+      top: 120px;
+      left: 155px;
+      animation-delay: 0.8s;
+    }
+
+    .orb.three {
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, #f59e0b, #ea580c);
+      top: 60px;
+      right: 28px;
+      animation-delay: 1.2s;
+    }
+
+    .line {
+      position: absolute;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(14, 165, 233, 0.08), rgba(14, 165, 233, 0.95), rgba(14, 165, 233, 0.08));
+      transform-origin: left center;
+      animation: sweep 4.5s ease-in-out infinite;
+    }
+
+    .line.l1 { top: 54px; left: 40px; width: 230px; }
+    .line.l2 { top: 146px; left: 80px; width: 200px; animation-delay: 1.3s; }
+    .line.l3 { top: 98px; left: 46px; width: 260px; animation-delay: 2.1s; }
+
+    .floating-label {
+      position: absolute;
+      font-size: 12px;
+      font-weight: 700;
+      color: #0f172a;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid #c7d2fe;
+      border-radius: 999px;
+      padding: 4px 8px;
+      animation: floatTag 4.2s ease-in-out infinite;
+    }
+
+    .floating-label.a { top: 16px; left: 16px; }
+    .floating-label.b { right: 16px; top: 16px; animation-delay: 1.1s; }
+    .floating-label.c { left: 22px; bottom: 16px; animation-delay: 2.2s; }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .image-card {
+      background: #f8fafc;
+      border: 1px solid #d5dee8;
+      border-radius: 10px;
+      overflow: hidden;
+      transition: transform 0.35s ease, box-shadow 0.35s ease;
+    }
+
+    .image-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 18px rgba(17, 24, 39, 0.12);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 170px;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.45s ease;
+    }
+
+    .image-card:hover img {
+      transform: scale(1.04);
+    }
+
+    .image-card p {
+      margin: 0;
+      padding: 9px 10px;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.65s ease, transform 0.65s ease;
+    }
+
+    .reveal.in-view {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    @keyframes pulseBorder {
+      0%, 100% { box-shadow: 0 0 0 rgba(185, 28, 28, 0); }
+      50% { box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.08); }
+    }
+
+    @keyframes orbit {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      25% { transform: translate(8px, -7px) scale(1.05); }
+      50% { transform: translate(-7px, 7px) scale(0.96); }
+      75% { transform: translate(6px, 5px) scale(1.03); }
+    }
+
+    @keyframes sweep {
+      0% { transform: scaleX(0.35); opacity: 0.35; }
+      50% { transform: scaleX(1); opacity: 0.85; }
+      100% { transform: scaleX(0.35); opacity: 0.35; }
+    }
+
+    @keyframes floatTag {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    @media (max-width: 920px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+      .hero-title {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="card reveal">
+      <div class="hero">
+        <div>
+          <h1 class="hero-title">train-hf（halflife）任务架构决策：当前不建议改成液态神经网络</h1>
+          <p class="hero-desc">报告目标：在你当前项目代码上下文下，给出“为什么不建议把 <code>train-hf</code> 直接改成液态神经网络（LNN/LTC/CfC）”的工程化论证，并对 <strong>Transformer vs 液态网络</strong> 做任务定制化对比。</p>
+        </div>
+        <div class="hero-visual" aria-label="架构比较动态图">
+          <div class="orb one"></div>
+          <div class="orb two"></div>
+          <div class="orb three"></div>
+          <div class="line l1"></div>
+          <div class="line l2"></div>
+          <div class="line l3"></div>
+          <div class="floating-label a">Transformer Baseline</div>
+          <div class="floating-label b">Liquid Net (PoC)</div>
+          <div class="floating-label c">Risk vs ROI</div>
+        </div>
+      </div>
+      <div class="badge-row">
+        <span class="badge">任务：mRNA half-life 回归</span>
+        <span class="badge">入口：Makefile train-hf</span>
+        <span class="badge">主干：3x 预训练 BERT + LoRA</span>
+        <span class="badge">当前结论：No-Go（全量替换）</span>
+      </div>
+      <div class="summary">
+        <strong>结论（一句话）：</strong> 在当前数据规模、任务形式和代码资产下，直接迁移到液态神经网络不是高 ROI 方案；应优先优化现有 Transformer 基线，再做小范围液态头部 PoC 验证。
+      </div>
+    </section>
+
+    <section class="card reveal">
+      <h2>视觉补充（动画与图片）</h2>
+      <p>下面是当前仓库已有图像资源的展示，作为决策报告的辅助可视化。图片与结论不直接等价，但可用来强化整体呈现与可读性。</p>
+      <div class="image-grid">
+        <figure class="image-card">
+          <img src="./images/0225/实验数据_604_normalized_metrics_comparison_bar_chart.png" alt="604 normalized metrics comparison" />
+          <p>示例图 A：Normalized Metrics Comparison（604）</p>
+        </figure>
+        <figure class="image-card">
+          <img src="./images/0226/实验数据_604_normalized_metrics_differences_bar_chart.png" alt="604 normalized metrics differences" />
+          <p>示例图 B：Normalized Metrics Differences（604）</p>
+        </figure>
+        <figure class="image-card">
+          <img src="./images/0225/实验数据_auro_rsv_normalized_metrics_comparison_bar_chart.png" alt="auro_rsv normalized metrics comparison" />
+          <p>示例图 C：Normalized Metrics Comparison（auro_rsv）</p>
+        </figure>
+        <figure class="image-card">
+          <img src="./images/0226/实验数据_zheda_homo_normalized_metrics_differences_bar_chart.png" alt="zheda_homo normalized metrics differences" />
+          <p>示例图 D：Normalized Metrics Differences（zheda_homo）</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="card reveal">
+      <h2>1) 当前任务与代码事实（决定了架构选择边界）</h2>
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="name">训练入口</div>
+          <div class="value"><code>make train-hf</code></div>
+        </div>
+        <div class="kpi">
+          <div class="name">训练任务</div>
+          <div class="value"><code>--task halflife</code></div>
+        </div>
+        <div class="kpi">
+          <div class="name">样本总量</div>
+          <div class="value">12,919</div>
+        </div>
+        <div class="kpi">
+          <div class="name">标签形式</div>
+          <div class="value">单值回归</div>
+        </div>
+      </div>
+
+      <h3>代码链路要点</h3>
+      <ul>
+        <li><code>Makefile</code> 中 <code>train-hf</code> 调用 <code>python finetune_all.py --task halflife</code>。</li>
+        <li><code>finetune_all.py</code> 对 <code>halflife</code> 走 <code>build_saluki_dataset</code>，并用 Pearson/Spearman 做评估。</li>
+        <li><code>FullModel.py</code> 使用 3 个预训练编码器（5'UTR、CDS、3'UTR），加 LoRA 微调与回归头。</li>
+        <li>本任务每个样本是“完整序列 -> 一个标量标签”，不是“随时间推进的多步观测序列”。</li>
+      </ul>
+
+      <div class="highlight">
+        <strong>关键判断：</strong> 液态网络的强项在连续时间/不规则采样/在线动态系统；而你现在的问题是离线静态序列回归，任务偏好与液态网络优势不完全重合。
+      </div>
+    </section>
+
+    <section class="card reveal">
+      <h2>2) 为什么“当前不建议”改成液态神经网络</h2>
+
+      <h3>A. 任务形态不匹配（核心）</h3>
+      <ul>
+        <li>你当前不是流式时序预测，而是离线样本回归。</li>
+        <li>液态网络的“输入驱动时间常数变化”在此类静态输入上，增益通常不如在真实时序任务明显。</li>
+      </ul>
+
+      <h3>B. 现有预训练资产价值很高</h3>
+      <ul>
+        <li>当前方案依赖 3 个 RNA 领域预训练模型，这部分是主要性能来源之一。</li>
+        <li>若全量换液态主干，通常意味着丢失现有预训练迁移优势，等于重新赌博。</li>
+      </ul>
+
+      <h3>C. 数据规模与风险收益比</h3>
+      <ul>
+        <li>12k 级别数据并不算“大到能轻松支撑全新架构重学”。</li>
+        <li>新架构带来更大的超参空间与稳定性风险，工程投入高，收益不确定。</li>
+      </ul>
+
+      <h3>D. 工程替换成本高于预期</h3>
+      <ul>
+        <li>需要重写/重接模型定义、训练流程、推理加载和性能基准。</li>
+        <li>与现有 API 的模型路径、参数管理、A/B 基准都会重新校准。</li>
+      </ul>
+
+      <h3>E. 当前先验瓶颈并不在“模型类型”</h3>
+      <ul>
+        <li>基线里存在训练一致性问题（如 batch 参数未真正生效、best model 指标未完整接入等），先修这些通常比换架构更高效。</li>
+      </ul>
+
+      <div class="summary">
+        <strong>工程结论：</strong> 现阶段直接改液态网络属于“高改造成本 + 中高不确定收益 + 较高回归风险”，不满足优先级条件。
+      </div>
+    </section>
+
+    <section class="card reveal">
+      <h2>3) 针对当前任务：Transformer vs 液态网络 详细优劣</h2>
+      <p class="note">评分说明：5 = 更适配当前 <code>halflife</code> 任务；1 = 明显不利。</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>比较维度（针对当前任务）</th>
+            <th>Transformer（当前 3xBERT + LoRA）</th>
+            <th>液态网络（LTC/CfC/LNN）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>与“静态序列回归”匹配度</td>
+            <td><span class="score s-good">5/5</span><br>天然适合离线序列特征抽取与回归头映射。</td>
+            <td><span class="score s-mid">3/5</span><br>可做，但核心优势并非为静态样本设计。</td>
+          </tr>
+          <tr>
+            <td>利用现有 RNA 预训练资产能力</td>
+            <td><span class="score s-good">5/5</span><br>直接复用 5'UTR/CDS/3'UTR 预训练权重。</td>
+            <td><span class="score s-bad">2/5</span><br>若全量替换主干，预训练优势会明显减弱。</td>
+          </tr>
+          <tr>
+            <td>小中等数据规模下的数据效率</td>
+            <td><span class="score s-good">4/5</span><br>LoRA + 预训练通常数据效率高。</td>
+            <td><span class="score s-mid">3/5</span><br>依赖具体实现与调参，收益不稳定。</td>
+          </tr>
+          <tr>
+            <td>训练稳定性与可复现性</td>
+            <td><span class="score s-good">4/5</span><br>HF Trainer 生态成熟，调试成本可控。</td>
+            <td><span class="score s-mid">2/5</span><br>LTC/CfC 对步长、初始化、结构更敏感。</td>
+          </tr>
+          <tr>
+            <td>工程接入成本（当前仓库）</td>
+            <td><span class="score s-good">5/5</span><br>已成体系，改动最小。</td>
+            <td><span class="score s-bad">2/5</span><br>需新增模型栈、训练策略与评测闭环。</td>
+          </tr>
+          <tr>
+            <td>推理与部署兼容性</td>
+            <td><span class="score s-good">4/5</span><br>当前 API/模型加载路径已适配。</td>
+            <td><span class="score s-mid">3/5</span><br>可部署，但要补足稳定性与兼容验证。</td>
+          </tr>
+          <tr>
+            <td>对不规则时间戳序列的建模能力</td>
+            <td><span class="score s-mid">2/5</span><br>通常需额外位置/时间编码处理。</td>
+            <td><span class="score s-good">5/5</span><br>这是液态网络最核心优势场景。</td>
+          </tr>
+          <tr>
+            <td>在线自适应/闭环控制场景潜力</td>
+            <td><span class="score s-mid">2/5</span><br>非主要强项。</td>
+            <td><span class="score s-good">5/5</span><br>在动态系统和控制任务中常更有潜力。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="ok">
+        <strong>解释：</strong> 液态网络并不是“差”，而是“当前任务下不占优”。如果任务变成实时流式、带时间戳的不规则观测，或在线控制闭环，结论可能反转。
+      </div>
+    </section>
+
+    <section class="card reveal">
+      <h2>4) 决策建议（偏保守、可量化）</h2>
+      <h3>推荐策略：保留 Transformer 主干，先做基线修复 + 小范围验证</h3>
+      <ul>
+        <li>先修现有训练一致性问题，再谈架构更替。</li>
+        <li>若确实想试液态网络，建议仅替换回归头（不动 3 个预训练编码器）。</li>
+        <li>设置清晰 Go/No-Go 门槛：
+          <ul>
+            <li>验证集 Spearman 提升至少 0.02；</li>
+            <li>测试集不退化（波动不超过 0.01）；</li>
+            <li>训练时间不超过当前 1.3 倍；</li>
+            <li>3 个随机种子方向一致。</li>
+          </ul>
+        </li>
+      </ul>
+
+      <div class="summary">
+        <strong>最终结论：</strong> 对你当前的 <code>train-hf/halflife</code> 任务，Transformer 路线在“性能确定性 + 工程成本 + 交付风险”三者平衡上更优；液态网络应作为受控实验选项，而非主线替换方案。
+      </div>
+    </section>
+
+    <section class="card footer reveal">
+      <p>生成时间：2026-05-06（本地时区）</p>
+      <p>说明：本报告为项目上下文定制结论，不是通用学术结论。若任务边界改变（例如加入真实时间戳序列/在线控制），需重新评估。</p>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var nodes = document.querySelectorAll(".reveal");
+      if (!("IntersectionObserver" in window)) {
+        nodes.forEach(function (n) { n.classList.add("in-view"); });
+        return;
+      }
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in-view");
+          }
+        });
+      }, { threshold: 0.14, rootMargin: "0px 0px -8% 0px" });
+      nodes.forEach(function (n) { io.observe(n); });
+    })();
+  </script>
+</body>
+</html>
