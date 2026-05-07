@@ -17,8 +17,57 @@ from peft import get_peft_model
 
 from utils import print_trainable_parameters
 
+class LiquidTimeConstantCell(nn.Module):
+    def __init__(self, input_size, hidden_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.candidate = nn.Linear(input_size + hidden_size, hidden_size)
+        self.tau = nn.Linear(input_size + hidden_size, hidden_size)
+
+    def forward(self, x_t, h_t):
+        combined = torch.cat([x_t, h_t], dim=-1)
+        candidate_state = torch.tanh(self.candidate(combined))
+        tau = F.softplus(self.tau(combined)) + 1.0
+        # ODE-inspired liquid update: dh/dt = (candidate - h) / tau, dt=1
+        h_next = h_t + (candidate_state - h_t) / tau
+        return h_next
+
+
+class LiquidRegressionHead(nn.Module):
+    def __init__(self, input_size=768, hidden_size=128, output_size=1, dropout=0.5):
+        super().__init__()
+        self.cell = LiquidTimeConstantCell(input_size=input_size, hidden_size=hidden_size)
+        self.norm = nn.LayerNorm(hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(dropout)
+        self.out = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x_seq):
+        # x_seq: [batch, seq_len, input_size]
+        batch_size = x_seq.size(0)
+        h_t = torch.zeros(batch_size, self.cell.hidden_size, device=x_seq.device, dtype=x_seq.dtype)
+        for t in range(x_seq.size(1)):
+            h_t = self.cell(x_seq[:, t, :], h_t)
+        h_t = self.norm(h_t)
+        h_t = self.dropout(h_t)
+        return self.out(h_t)
+
+
 class FullModel(torch.nn.Module):
-    def __init__(self, num_labels, class_weights, lorar, lalpha, ldropout, head_dim=768, head_droupout=0.5, useCLIP=False, temperature=0.07, clip_coeff=0.2):
+    def __init__(
+        self,
+        num_labels,
+        class_weights,
+        lorar,
+        lalpha,
+        ldropout,
+        head_dim=768,
+        head_droupout=0.5,
+        useCLIP=False,
+        temperature=0.07,
+        clip_coeff=0.2,
+        head_type="mlp",
+        liquid_hidden=128,
+    ):
         super(FullModel, self).__init__()
         
         # tokenizer
@@ -27,6 +76,7 @@ class FullModel(torch.nn.Module):
         self.tokenizer_3utr = None
         self.build_tokenizer()
         self.CLIP = useCLIP
+        self.head_type = head_type
         
         # model 
         self.utr5 = BertForMaskedLM.from_pretrained("pretrained_models/mrna_5utr_model")
@@ -86,6 +136,13 @@ class FullModel(torch.nn.Module):
         self.decoder = nn.Linear(head_dim, num_labels, bias=False)
         self.bias = nn.Parameter(torch.zeros(num_labels))
         self.decoder.bias = self.bias
+
+        self.liquid_head = LiquidRegressionHead(
+            input_size=768,
+            hidden_size=liquid_hidden,
+            output_size=num_labels,
+            dropout=head_droupout,
+        )
         
         if num_labels == 1:
             self.loss_fn = nn.MSELoss()
@@ -169,14 +226,18 @@ class FullModel(torch.nn.Module):
 
 
         if not self.CLIP:
-            joint_embed = torch.cat([utr5_sum_embeddings, cds_sum_embeddings, utr3_sum_embeddings], dim=1)
-
-            hidden_states = self.final_dense(joint_embed)
-            hidden_states = self.transform_act_fn(hidden_states)
-            hidden_states = self.LayerNorm(hidden_states)
-
-            hidden_states = self.dropout(hidden_states)
-            logits = self.decoder(hidden_states).squeeze()
+            if self.head_type == "liquid":
+                seq_embed = torch.stack([utr5_sum_embeddings, cds_sum_embeddings, utr3_sum_embeddings], dim=1)
+                logits = self.liquid_head(seq_embed).squeeze()
+                hidden_states = None
+                joint_embed = seq_embed
+            else:
+                joint_embed = torch.cat([utr5_sum_embeddings, cds_sum_embeddings, utr3_sum_embeddings], dim=1)
+                hidden_states = self.final_dense(joint_embed)
+                hidden_states = self.transform_act_fn(hidden_states)
+                hidden_states = self.LayerNorm(hidden_states)
+                hidden_states = self.dropout(hidden_states)
+                logits = self.decoder(hidden_states).squeeze()
             loss = self.loss_fn(logits, labels)
 
             if not return_hidden:

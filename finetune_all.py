@@ -26,9 +26,11 @@ parser.add_argument('--lr',       type=float, default=1e-5, help='learning rate'
 
 parser.add_argument('--head_dim', type=int, default=768, help='production head dimension')
 parser.add_argument('--head_dropout', type=float, default=0.5, help='production head dropout')
+parser.add_argument('--head_type', type=str, default='mlp', choices=['mlp', 'liquid'], help='prediction head type')
+parser.add_argument('--liquid_hidden', type=int, default=128, help='liquid head hidden dimension')
 
 parser.add_argument('--device', '-d', type=int, default=0, help='device')
-parser.add_argument('--batch',  '-b', type=int, default=64, help='batch size')
+parser.add_argument('--batch',  '-b', type=int, default=12, help='batch size')
 
 parser.add_argument('--useCLIP',      '-clip', type=bool, default=False, help='use CLIP')
 parser.add_argument('--temperature',  '-temp', type=float, default=0.07, help='temperature')
@@ -66,7 +68,9 @@ model = FullModel(
     args.head_dropout,
     args.useCLIP, 
     args.temperature, 
-    args.coefficient
+    args.coefficient,
+    args.head_type,
+    args.liquid_hidden,
 )
 
 
@@ -95,7 +99,7 @@ training_args = TrainingArguments(
     overwrite_output_dir=True,
     num_train_epochs=100,
     # num_train_epochs=10,
-    per_device_train_batch_size=12,
+    per_device_train_batch_size=args.batch,
     gradient_accumulation_steps=4,
     per_device_eval_batch_size=8,
     save_strategy="epoch", 
@@ -106,6 +110,8 @@ training_args = TrainingArguments(
     logging_steps=1,
     report_to="none",
     save_safetensors=False,
+    metric_for_best_model=metric_for_best_model,
+    greater_is_better=greater_is_better,
 )
 
 def compute_metrics(eval_pred):
@@ -146,8 +152,8 @@ trainer.train()
 
 
 # 保存微调后的模型
-# torch.save(trainer.model.state_dict(), './outputs/tr/finetuned_model.pt')
-torch.save(trainer.model.state_dict(), './outputs/halflife/finetuned_model.pt')
+os.makedirs(args.output, exist_ok=True)
+torch.save(trainer.model.state_dict(), os.path.join(args.output, 'finetuned_model.pt'))
 
 
 
@@ -165,4 +171,3 @@ print(metrics)
 # Prediction on test set
 pred, _, metrics = trainer.predict(test_loader)
 print(metrics)
-
